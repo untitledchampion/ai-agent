@@ -93,9 +93,9 @@ export default function ChatPage() {
   const selectedDebug = messages.find(m => m.id === selectedMsgId)?.debug || null;
 
   return (
-    <div className="h-full flex">
+    <>
       {/* Chat panel */}
-      <div className="flex-1 flex flex-col">
+      <div className="flex-1 flex flex-col min-h-0">
         <div className="p-4 border-b border-gray-200 bg-white flex items-center justify-between">
           <div>
             <h2 className="text-lg font-semibold text-gray-800">Тестовый чат</h2>
@@ -198,7 +198,7 @@ export default function ChatPage() {
 
       {/* Debug panel */}
       {showDebug && (
-        <div className="fixed inset-0 z-20 bg-gray-900 text-gray-100 overflow-y-auto sm:static sm:inset-auto sm:w-96 sm:border-l sm:border-gray-700 sm:shrink-0">
+        <div className="fixed inset-0 z-20 bg-gray-900 text-gray-100 overflow-y-auto">
           <div className="p-4 border-b border-gray-700 flex items-center justify-between">
             <h3 className="font-semibold text-sm">Отладка</h3>
             <button
@@ -270,7 +270,7 @@ export default function ChatPage() {
           )}
         </div>
       )}
-    </div>
+    </>
   );
 }
 
