@@ -7,7 +7,7 @@ export default function ChatPage() {
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [selectedMsgId, setSelectedMsgId] = useState(null);
-  const [showDebug, setShowDebug] = useState(true);
+  const [showDebug, setShowDebug] = useState(false);
   const messagesEndRef = useRef(null);
 
   useEffect(() => { loadHistory(); }, [chatId]);
@@ -198,9 +198,14 @@ export default function ChatPage() {
 
       {/* Debug panel */}
       {showDebug && (
-        <div className="w-96 bg-gray-900 text-gray-100 overflow-y-auto border-l border-gray-700 shrink-0">
-          <div className="p-4 border-b border-gray-700">
+        <div className="fixed inset-0 z-20 bg-gray-900 text-gray-100 overflow-y-auto sm:static sm:inset-auto sm:w-96 sm:border-l sm:border-gray-700 sm:shrink-0">
+          <div className="p-4 border-b border-gray-700 flex items-center justify-between">
             <h3 className="font-semibold text-sm">Отладка</h3>
+            <button
+              onClick={() => setShowDebug(false)}
+              className="text-gray-400 hover:text-white text-lg leading-none px-2"
+              aria-label="Закрыть"
+            >×</button>
           </div>
           {selectedDebug ? (
             <div className="p-4 space-y-4 text-xs font-mono">
