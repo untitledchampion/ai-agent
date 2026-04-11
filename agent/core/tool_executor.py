@@ -31,26 +31,52 @@ def _top1_dist(hits: list[dict]) -> float:
 AMBIGUITY_GAP = 0.025
 
 
-# Deterministic post-filter: if the user query contains a hard numeric
-# constraint (length in meters, screw size, article number), keep only
-# candidates whose name contains that exact token. BGE-M3 doesn't
-# differentiate "(3,2м)" from "(3,0м)" reliably, so we do it ourselves.
-_SIZE_PATTERNS = [
-    r"\d+[.,]\d+\s*м\b",   # 3.2м, 3,2 м
-    r"\d+\*\d+",            # 3.5*35
-    r"№\s*\d+",             # №22
-]
+# Deterministic post-filter: if the user query contains hard numeric
+# constraints (dimension pair like "60/110" or "2*0.75", length in meters,
+# article number), keep only candidates whose name contains the same
+# constraint. BGE-M3 does not differentiate "(3,2м)" from "(3,0м)" or
+# "2*1.5" from "2*0.75" reliably, so we do it ourselves.
+#
+# Separators in number pairs are normalized: "60/110", "060-110", "60x110",
+# "60*110", "60×110" and "60х110" (Cyrillic х) all collapse to "60:110".
+_NUM = r"\d+(?:[.,]\d+)?"
+_SEP = r"[-/*xхX×]"
+_PAIR_RX = re.compile(rf"(?<!\d){_NUM}\s*{_SEP}\s*{_NUM}(?!\d)")
+_LEN_M_RX = re.compile(r"(?<!\d)(\d+[.,]\d+)\s*м(?!м)(?!\w)")
+_ARTICLE_RX = re.compile(r"№\s*(\d+)")
 
 
-def _norm(s: str) -> str:
-    return s.lower().replace(",", ".")
+def _canon_num(s: str) -> str:
+    """Strip leading zeros and trailing fraction zeros: '060' → '60', '2.0' → '2', '0.750' → '0.75'."""
+    s = s.strip().replace(",", ".")
+    if "." in s:
+        i, f = s.split(".", 1)
+        i = i.lstrip("0") or "0"
+        f = f.rstrip("0")
+        return f"{i}.{f}" if f else i
+    return s.lstrip("0") or "0"
 
 
-def _extract_size_tokens(name: str) -> list[str]:
-    n = _norm(name)
+def _extract_size_tokens(text: str) -> list[str]:
+    """Extract canonical dimension/size tokens from free text.
+
+    Returns tokens like 'P60:110' for number pairs (any separator),
+    'L3.2' for lengths in meters, '№22' for article numbers. The same
+    semantic value produces the same token regardless of which
+    separator was used ('/', '-', '*', 'x', 'х', '×').
+    """
+    if not text:
+        return []
+    n = text.lower()
     out: list[str] = []
-    for pat in _SIZE_PATTERNS:
-        out.extend(re.findall(pat, n))
+    for m in _PAIR_RX.finditer(n):
+        parts = re.split(_SEP, m.group(0))
+        canon = ":".join(_canon_num(p) for p in parts if p.strip())
+        out.append(f"P{canon}")
+    for m in _LEN_M_RX.finditer(n):
+        out.append(f"L{_canon_num(m.group(1))}")
+    for m in _ARTICLE_RX.finditer(n):
+        out.append(f"№{m.group(1)}")
     return out
 
 
@@ -206,19 +232,14 @@ def _filter_by_top_category(hits: list[dict]) -> list[dict]:
 
 
 def _filter_by_size(query_name: str, hits: list[dict]) -> list[dict]:
-    tokens = _extract_size_tokens(query_name)
-    if not tokens or not hits:
+    q_tokens = _extract_size_tokens(query_name)
+    if not q_tokens or not hits:
         return hits
+    q_set = set(q_tokens)
     filtered: list[dict] = []
     for h in hits:
-        n = _norm(h.get("name", ""))
-        ok = True
-        for t in tokens:
-            pat = r"(?<!\d)" + re.escape(t).replace(r"\ ", r"\s*") + r"(?!\d)"
-            if not re.search(pat, n):
-                ok = False
-                break
-        if ok:
+        name_tokens = set(_extract_size_tokens(h.get("name", "")))
+        if q_set.issubset(name_tokens):
             filtered.append(h)
     # If hard filter wiped everything, fall back to original list
     return filtered if filtered else hits
