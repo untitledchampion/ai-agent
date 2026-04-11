@@ -1,0 +1,27 @@
+services:
+  collector:
+    build: .
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
+    volumes:
+      - ./data:/app/data
+      - ./.env:/app/.env:ro
+    environment:
+      DATABASE_URL: "sqlite+aiosqlite:///./data/chatapp_data.db"
+
+  agent:
+    build:
+      context: .
+      dockerfile: Dockerfile.agent
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/app/data
+      - ./.env:/app/.env:ro
+    environment:
+      DATABASE_URL: "sqlite+aiosqlite:///./data/agent.db"
+      COLLECTOR_DB_URL: "sqlite+aiosqlite:///./data/chatapp_data.db"

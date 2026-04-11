@@ -1,0 +1,42 @@
+# Secrets
+.env
+.env.local
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Node / frontend
+node_modules/
+
+# Databases (excluded by default; whitelist the slim prod DB below)
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+!data/chatapp_data_prod.db
+
+# Backups
+*.bak
+*.backup
+*.gz
+data/chatapp_data_backup_*.db*
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+.claude/
+
+# Logs
+*.log
