@@ -243,18 +243,20 @@ export default function KnowledgePage() {
   const [loading, setLoading] = useState(false);
   const [modal, setModal] = useState(null);
   const [selected, setSelected] = useState(() => new Set());
+  const [page, setPage] = useState(1);
+  const pageSize = 50;
   const timer = useRef(null);
   const reqSeq = useRef(0);
 
-  const load = async (query = q) => {
+  const load = async (query, pageNum) => {
     const myReq = ++reqSeq.current;
     setLoading(true);
     try {
-      const res = await listAliases(query, 500);
+      const res = await listAliases(query, pageSize, (pageNum - 1) * pageSize);
       if (myReq !== reqSeq.current) return;
       setItems(res.items || []);
       setTotal(res.total || 0);
-      setSelected(new Set()); // reset selection on reload
+      setSelected(new Set());
     } catch (e) {
       if (myReq === reqSeq.current) console.error(e);
     } finally {
@@ -263,19 +265,30 @@ export default function KnowledgePage() {
   };
 
   useEffect(() => {
-    load('');
+    load(q, page);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page]);
+
+  useEffect(() => {
+    load('', 1);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const onSearch = (v) => {
     setQ(v);
     if (timer.current) clearTimeout(timer.current);
-    timer.current = setTimeout(() => load(v), 250);
+    timer.current = setTimeout(() => {
+      setPage(1);
+      load(v, 1);
+    }, 250);
   };
+
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
 
   const remove = async (id) => {
     if (!confirm('Удалить алиас?')) return;
     await deleteAlias(id);
-    load();
+    load(q, page);
   };
 
   const toggleOne = (id) => {
@@ -305,7 +318,7 @@ export default function KnowledgePage() {
     if (ids.length === 0) return;
     if (!confirm(`Удалить ${ids.length} алиасов?`)) return;
     await bulkDeleteAliases(ids);
-    load();
+    load(q, page);
   };
 
   const broken = useMemo(() => items.filter((x) => !x.product_exists).length, [items]);
@@ -422,13 +435,54 @@ export default function KnowledgePage() {
         </table>
       </div>
 
+      {total > pageSize && (
+        <div className="px-4 py-2 border-t border-gray-200 bg-gray-50 flex items-center justify-between text-xs text-gray-600">
+          <span>
+            {(page - 1) * pageSize + 1}–{Math.min(page * pageSize, total)} из {total}
+          </span>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setPage(1)}
+              disabled={page === 1}
+              className="px-2 py-1 rounded border border-gray-300 bg-white hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              «
+            </button>
+            <button
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              disabled={page === 1}
+              className="px-2 py-1 rounded border border-gray-300 bg-white hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              ←
+            </button>
+            <span className="px-2">
+              стр. {page} / {totalPages}
+            </span>
+            <button
+              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              disabled={page >= totalPages}
+              className="px-2 py-1 rounded border border-gray-300 bg-white hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              →
+            </button>
+            <button
+              onClick={() => setPage(totalPages)}
+              disabled={page >= totalPages}
+              className="px-2 py-1 rounded border border-gray-300 bg-white hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              »
+            </button>
+          </div>
+        </div>
+      )}
+
       {modal && (
         <AliasModal
           initial={modal.id ? modal : null}
           onClose={() => setModal(null)}
           onSaved={() => {
             setModal(null);
-            load();
+            load(q, page);
           }}
         />
       )}

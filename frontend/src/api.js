@@ -56,8 +56,10 @@ export const updateTone = (data) =>
 export const previewTonePrompt = () => request('/tone/preview');
 
 // Knowledge (product aliases)
-export const listAliases = (q = '', limit = 500) =>
-  request(`/knowledge/aliases?q=${encodeURIComponent(q)}&limit=${limit}`);
+export const listAliases = (q = '', limit = 50, offset = 0) =>
+  request(
+    `/knowledge/aliases?q=${encodeURIComponent(q)}&limit=${limit}&offset=${offset}`
+  );
 export const createAlias = (data) =>
   request('/knowledge/aliases', { method: 'POST', body: JSON.stringify(data) });
 export const updateAlias = (id, data) =>
