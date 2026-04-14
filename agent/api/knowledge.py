@@ -40,15 +40,30 @@ async def list_aliases(q: str = "", limit: int = 500, offset: int = 0):
     async with async_session() as session:
         where = ""
         params = {"limit": limit, "offset": offset}
+        order = "pa.id DESC"
         if q:
-            where = "WHERE pa.alias LIKE :q OR pa.product_name LIKE :q"
-            params["q"] = f"%{q.lower()}%"
+            ql = q.lower()
+            where = "WHERE pa.alias LIKE :qlike OR pa.product_name LIKE :qlike"
+            params["qlike"] = f"%{ql}%"
+            params["qexact"] = ql
+            params["qprefix"] = f"{ql}%"
+            # Rank: 0=exact alias, 1=alias starts-with, 2=alias contains, 3=product only
+            order = """
+                CASE
+                  WHEN pa.alias = :qexact THEN 0
+                  WHEN pa.alias LIKE :qprefix THEN 1
+                  WHEN pa.alias LIKE :qlike THEN 2
+                  ELSE 3
+                END,
+                pa.alias,
+                pa.id DESC
+            """
         rows = await session.execute(text(f"""
             SELECT pa.id, pa.alias, pa.product_name, pa.created_at,
                    EXISTS(SELECT 1 FROM products p WHERE p.name = pa.product_name) AS product_exists
               FROM product_aliases pa
               {where}
-          ORDER BY pa.id DESC
+          ORDER BY {order}
              LIMIT :limit OFFSET :offset
         """), params)
         items = [dict(r._mapping) for r in rows]
