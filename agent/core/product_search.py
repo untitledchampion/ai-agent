@@ -6,6 +6,7 @@ Returns plain dicts so results can be JSON-serialized into tool outputs.
 from __future__ import annotations
 
 import logging
+import re
 import sqlite3
 import struct
 import threading
@@ -52,6 +53,36 @@ def _open_conn() -> sqlite3.Connection:
     return conn
 
 
+_TOKEN_RE = re.compile(
+    r"(?:[а-яa-z]{2,4}\d+|\d+[.,]\d+м?|\d{1,4}м|\d{2,})",
+    re.IGNORECASE,
+)
+
+
+def _strong_tokens(q: str) -> list[str]:
+    """Extract high-signal tokens: article codes (ПК14, DK8009), sizes (3.2м), numbers (02)."""
+    q = (q or "").lower().replace("ё", "е").replace(",", ".")
+    return _TOKEN_RE.findall(q)
+
+
+def _rerank_by_tokens(query: str, rows: list[dict]) -> list[dict]:
+    """Boost candidates whose name contains exact strong tokens from query."""
+    tokens = _strong_tokens(query)
+    if not tokens:
+        return rows
+    for r in rows:
+        name_low = (r.get("name") or "").lower().replace("ё", "е").replace(",", ".")
+        hits = 0
+        for t in tokens:
+            if re.search(rf"(?<!\d){re.escape(t)}(?!\d)", name_low):
+                hits += 1
+        if hits:
+            r["distance"] = max(0.0, r["distance"] - 0.1 * hits)
+            r["token_boost"] = hits
+    rows.sort(key=lambda x: x["distance"])
+    return rows
+
+
 def search_products(query: str, k: int = 10) -> list[dict]:
     """Return top-k product candidates for a free-form query.
 
@@ -84,7 +115,7 @@ def search_products(query: str, k: int = 10) -> list[dict]:
     finally:
         conn.close()
 
-    return [dict(r) for r in rows]
+    return _rerank_by_tokens(q, [dict(r) for r in rows])
 
 
 def _normalize_alias_query(query: str) -> str:
