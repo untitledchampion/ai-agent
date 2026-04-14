@@ -289,10 +289,20 @@ def _search_products_tool(args: dict) -> dict:
                 chosen_hits = _filter_by_size(name, alias_hits)
                 chosen_hits = _filter_by_color(name, chosen_hits)
             else:
-                # Ищем только по имени — количество к поиску не относится
-                # (иначе "10 м" ложно совпадает с "10 м/уп" в упаковке).
+                # По умолчанию ищем только по имени — количество (типа "10 м", "2 шт")
+                # ложно совпадает с упаковкой в названии товара ("10 м/уп").
                 chosen_query = name
                 chosen_hits = product_search.search_products(name, k=k)
+
+                # Исключение: если qty — это "голое" число без единиц ("320",
+                # "50"), оно может быть на самом деле размером/шириной, который
+                # Triage ошибочно засунул в qty. Тогда пробуем name+qty как
+                # страховку — и берём только если результат заметно лучше.
+                if qty and re.fullmatch(r"\d+([.,]\d+)?", qty.strip()):
+                    hits_combined = product_search.search_products(f"{name} {qty}", k=k)
+                    if _top1_dist(hits_combined) < _top1_dist(chosen_hits) - 0.03:
+                        chosen_query = f"{name} {qty}"
+                        chosen_hits = hits_combined
 
                 # Hard filters: explicit numeric size, explicit color,
                 # then collapse to top-1's product category.
