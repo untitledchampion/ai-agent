@@ -16,14 +16,13 @@ venv/
 # Node / frontend
 node_modules/
 
-# Databases (excluded by default; whitelist the slim prod DB below)
+# Databases — рантайм-данные, в git не коммитим
 *.db
 *.db-journal
 *.db-wal
 *.db-shm
 *.sqlite
 *.sqlite3
-!data/chatapp_data_prod.db
 
 # Backups
 *.bak
