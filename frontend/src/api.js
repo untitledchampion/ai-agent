@@ -64,6 +64,11 @@ export const updateAlias = (id, data) =>
   request(`/knowledge/aliases/${id}`, { method: 'PUT', body: JSON.stringify(data) });
 export const deleteAlias = (id) =>
   request(`/knowledge/aliases/${id}`, { method: 'DELETE' });
+export const bulkDeleteAliases = (ids) =>
+  request('/knowledge/aliases/bulk_delete', {
+    method: 'POST',
+    body: JSON.stringify({ ids }),
+  });
 export const searchProductsForSelect = (q) =>
   request(`/knowledge/products/search?q=${encodeURIComponent(q)}`);
 

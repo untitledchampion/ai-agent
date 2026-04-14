@@ -4,68 +4,150 @@ import {
   createAlias,
   updateAlias,
   deleteAlias,
+  bulkDeleteAliases,
   searchProductsForSelect,
 } from '../api';
 
-function ProductPicker({ value, onChange, autoFocus }) {
-  const [q, setQ] = useState(value || '');
-  const [items, setItems] = useState([]);
+/** Searchable product picker — opens a popover, forces selection from results. */
+function ProductPicker({ value, onPick, invalid }) {
   const [open, setOpen] = useState(false);
+  const [q, setQ] = useState('');
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(false);
   const timer = useRef(null);
+  const reqSeq = useRef(0);
+  const inputRef = useRef(null);
 
   useEffect(() => {
-    setQ(value || '');
-  }, [value]);
+    if (!open) return;
+    setTimeout(() => inputRef.current?.focus(), 20);
+  }, [open]);
 
-  const handleChange = (v) => {
-    setQ(v);
-    onChange(v);
-    setOpen(true);
+  const runSearch = (v) => {
     if (timer.current) clearTimeout(timer.current);
     timer.current = setTimeout(async () => {
       if (v.trim().length < 2) {
         setItems([]);
         return;
       }
+      const myReq = ++reqSeq.current;
+      setLoading(true);
       try {
         const res = await searchProductsForSelect(v);
+        if (myReq !== reqSeq.current) return;
         setItems(res.items || []);
-      } catch (e) {
-        setItems([]);
+      } finally {
+        if (myReq === reqSeq.current) setLoading(false);
       }
     }, 200);
   };
 
+  const pick = (p) => {
+    onPick(p.name);
+    setOpen(false);
+    setQ('');
+    setItems([]);
+  };
+
+  const highlight = (name) => {
+    const t = q.trim();
+    if (!t) return name;
+    const i = name.toLowerCase().indexOf(t.toLowerCase());
+    if (i < 0) return name;
+    return (
+      <>
+        {name.slice(0, i)}
+        <mark className="bg-yellow-200">{name.slice(i, i + t.length)}</mark>
+        {name.slice(i + t.length)}
+      </>
+    );
+  };
+
   return (
     <div className="relative">
-      <input
-        autoFocus={autoFocus}
-        value={q}
-        onChange={(e) => handleChange(e.target.value)}
-        onFocus={() => setOpen(true)}
-        onBlur={() => setTimeout(() => setOpen(false), 150)}
-        placeholder="Название товара из прайса"
-        className="w-full border border-gray-300 rounded px-3 py-2 text-sm"
-      />
-      {open && items.length > 0 && (
-        <div className="absolute z-10 left-0 right-0 bg-white border border-gray-200 rounded shadow-lg mt-1 max-h-64 overflow-y-auto">
-          {items.map((p) => (
-            <div
-              key={p.id}
-              onMouseDown={() => {
-                setQ(p.name);
-                onChange(p.name);
-                setOpen(false);
-              }}
-              className="px-3 py-2 text-sm hover:bg-gray-50 cursor-pointer border-b border-gray-100 last:border-0"
-            >
-              <div className="font-medium">{p.name}</div>
-              <div className="text-xs text-gray-500">
-                {p.code} · {p.price_dealer ?? '—'} ₽
-              </div>
-            </div>
-          ))}
+      {value ? (
+        <div
+          className={
+            'flex items-center gap-2 border rounded px-3 py-2 text-sm ' +
+            (invalid ? 'border-red-400 bg-red-50' : 'border-gray-300 bg-gray-50')
+          }
+        >
+          <span className="flex-1 truncate">{value}</span>
+          <button
+            type="button"
+            onClick={() => setOpen(true)}
+            className="text-xs text-blue-600 hover:underline whitespace-nowrap"
+          >
+            сменить
+          </button>
+          <button
+            type="button"
+            onClick={() => onPick('')}
+            className="text-xs text-gray-400 hover:text-red-600"
+            title="Сбросить"
+          >
+            ✕
+          </button>
         </div>
+      ) : (
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          className="w-full text-left border border-dashed border-gray-300 rounded px-3 py-2 text-sm text-gray-500 hover:border-blue-400 hover:text-blue-600"
+        >
+          + Выбрать товар из прайса…
+        </button>
+      )}
+
+      {open && (
+        <>
+          <div
+            className="fixed inset-0 z-40"
+            onClick={() => setOpen(false)}
+          />
+          <div className="absolute z-50 left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-xl overflow-hidden">
+            <div className="p-2 border-b border-gray-100">
+              <input
+                ref={inputRef}
+                value={q}
+                onChange={(e) => {
+                  setQ(e.target.value);
+                  runSearch(e.target.value);
+                }}
+                placeholder="Поиск по названию или артикулу (мин. 2 символа)"
+                className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm focus:border-blue-400 focus:outline-none"
+              />
+            </div>
+            <div className="max-h-72 overflow-y-auto">
+              {loading && (
+                <div className="px-3 py-2 text-xs text-gray-400">Ищу…</div>
+              )}
+              {!loading && q.trim().length < 2 && (
+                <div className="px-3 py-6 text-xs text-gray-400 text-center">
+                  Введите хотя бы 2 символа
+                </div>
+              )}
+              {!loading && q.trim().length >= 2 && items.length === 0 && (
+                <div className="px-3 py-6 text-xs text-gray-400 text-center">
+                  Ничего не найдено
+                </div>
+              )}
+              {items.map((p) => (
+                <button
+                  key={p.id}
+                  type="button"
+                  onClick={() => pick(p)}
+                  className="w-full text-left px-3 py-2 text-sm hover:bg-blue-50 border-b border-gray-50 last:border-0"
+                >
+                  <div className="font-medium">{highlight(p.name)}</div>
+                  <div className="text-xs text-gray-500">
+                    {p.code} · {p.price_dealer ?? '—'} ₽
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+        </>
       )}
     </div>
   );
@@ -77,13 +159,12 @@ function AliasModal({ initial, onClose, onSaved }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
   const isEdit = !!initial?.id;
+  const brokenProduct = isEdit && initial?.product_exists === false;
+
+  const canSave = alias.trim().length > 0 && productName.trim().length > 0 && !saving;
 
   const save = async () => {
     setError(null);
-    if (!alias.trim() || !productName.trim()) {
-      setError('Заполните оба поля');
-      return;
-    }
     setSaving(true);
     try {
       if (isEdit) {
@@ -122,7 +203,16 @@ function AliasModal({ initial, onClose, onSaved }) {
             <label className="text-xs text-gray-600 block mb-1">
               Товар в прайсе
             </label>
-            <ProductPicker value={productName} onChange={setProductName} />
+            <ProductPicker
+              value={productName}
+              onPick={setProductName}
+              invalid={brokenProduct && productName === initial?.product_name}
+            />
+            {brokenProduct && productName === initial?.product_name && (
+              <div className="text-xs text-red-600 mt-1">
+                ⚠ этот товар больше не существует в прайсе — перевыберите
+              </div>
+            )}
           </div>
           {error && <div className="text-sm text-red-600">{error}</div>}
         </div>
@@ -135,8 +225,8 @@ function AliasModal({ initial, onClose, onSaved }) {
           </button>
           <button
             onClick={save}
-            disabled={saving}
-            className="px-4 py-2 text-sm rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
+            disabled={!canSave}
+            className="px-4 py-2 text-sm rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {saving ? 'Сохраняю…' : 'Сохранить'}
           </button>
@@ -151,7 +241,8 @@ export default function KnowledgePage() {
   const [items, setItems] = useState([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
-  const [modal, setModal] = useState(null); // null | {} | {id, alias, product_name}
+  const [modal, setModal] = useState(null);
+  const [selected, setSelected] = useState(() => new Set());
   const timer = useRef(null);
   const reqSeq = useRef(0);
 
@@ -160,9 +251,10 @@ export default function KnowledgePage() {
     setLoading(true);
     try {
       const res = await listAliases(query, 500);
-      if (myReq !== reqSeq.current) return; // stale — ignore
+      if (myReq !== reqSeq.current) return;
       setItems(res.items || []);
       setTotal(res.total || 0);
+      setSelected(new Set()); // reset selection on reload
     } catch (e) {
       if (myReq === reqSeq.current) console.error(e);
     } finally {
@@ -186,6 +278,36 @@ export default function KnowledgePage() {
     load();
   };
 
+  const toggleOne = (id) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const allVisibleIds = useMemo(() => items.map((i) => i.id), [items]);
+  const allSelected = allVisibleIds.length > 0 && allVisibleIds.every((id) => selected.has(id));
+  const someSelected = selected.size > 0 && !allSelected;
+
+  const toggleAll = () => {
+    setSelected((prev) => {
+      if (allSelected) return new Set();
+      const next = new Set(prev);
+      allVisibleIds.forEach((id) => next.add(id));
+      return next;
+    });
+  };
+
+  const bulkRemove = async () => {
+    const ids = Array.from(selected);
+    if (ids.length === 0) return;
+    if (!confirm(`Удалить ${ids.length} алиасов?`)) return;
+    await bulkDeleteAliases(ids);
+    load();
+  };
+
   const broken = useMemo(() => items.filter((x) => !x.product_exists).length, [items]);
 
   return (
@@ -205,18 +327,44 @@ export default function KnowledgePage() {
         </button>
       </div>
 
-      <div className="px-4 py-2 text-xs text-gray-500 flex gap-3 border-b border-gray-100">
-        <span>Всего: {total}</span>
-        {broken > 0 && (
-          <span className="text-red-600">⚠ битых: {broken}</span>
-        )}
-        {loading && <span>загрузка…</span>}
-      </div>
+      {selected.size > 0 ? (
+        <div className="px-4 py-2 text-sm flex items-center gap-3 border-b border-blue-200 bg-blue-50">
+          <span className="font-medium text-blue-900">Выбрано: {selected.size}</span>
+          <button
+            onClick={bulkRemove}
+            className="px-3 py-1 text-xs rounded bg-red-600 text-white hover:bg-red-700"
+          >
+            Удалить
+          </button>
+          <button
+            onClick={() => setSelected(new Set())}
+            className="px-3 py-1 text-xs rounded border border-gray-300 bg-white hover:bg-gray-50"
+          >
+            Снять выделение
+          </button>
+        </div>
+      ) : (
+        <div className="px-4 py-2 text-xs text-gray-500 flex gap-3 border-b border-gray-100">
+          <span>Всего: {total}</span>
+          {broken > 0 && <span className="text-red-600">⚠ битых: {broken}</span>}
+          {loading && <span>загрузка…</span>}
+        </div>
+      )}
 
       <div className="flex-1 overflow-y-auto">
         <table className="w-full text-sm">
           <thead className="sticky top-0 bg-gray-50 border-b border-gray-200">
             <tr className="text-left text-xs text-gray-600">
+              <th className="px-3 py-2 w-8">
+                <input
+                  type="checkbox"
+                  checked={allSelected}
+                  ref={(el) => {
+                    if (el) el.indeterminate = someSelected;
+                  }}
+                  onChange={toggleAll}
+                />
+              </th>
               <th className="px-4 py-2 font-medium">Алиас</th>
               <th className="px-4 py-2 font-medium">Товар</th>
               <th className="px-4 py-2 font-medium w-20"></th>
@@ -224,7 +372,20 @@ export default function KnowledgePage() {
           </thead>
           <tbody>
             {items.map((it) => (
-              <tr key={it.id} className="border-b border-gray-100 hover:bg-gray-50">
+              <tr
+                key={it.id}
+                className={
+                  'border-b border-gray-100 hover:bg-gray-50 ' +
+                  (selected.has(it.id) ? 'bg-blue-50' : '')
+                }
+              >
+                <td className="px-3 py-2">
+                  <input
+                    type="checkbox"
+                    checked={selected.has(it.id)}
+                    onChange={() => toggleOne(it.id)}
+                  />
+                </td>
                 <td className="px-4 py-2 font-mono">{it.alias}</td>
                 <td className="px-4 py-2">
                   {!it.product_exists && (
@@ -252,7 +413,7 @@ export default function KnowledgePage() {
             ))}
             {!loading && items.length === 0 && (
               <tr>
-                <td colSpan={3} className="px-4 py-8 text-center text-gray-400">
+                <td colSpan={4} className="px-4 py-8 text-center text-gray-400">
                   Ничего не найдено
                 </td>
               </tr>

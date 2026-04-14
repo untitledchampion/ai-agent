@@ -103,8 +103,27 @@ async def delete_alias(alias_id: int):
         return {"deleted": alias_id}
 
 
+class BulkDeleteIn(BaseModel):
+    ids: list[int]
+
+
+@router.post("/aliases/bulk_delete")
+async def bulk_delete_aliases(body: BulkDeleteIn):
+    ids = [int(i) for i in (body.ids or [])]
+    if not ids:
+        return {"deleted": 0}
+    async with async_session() as session:
+        placeholders = ",".join(f":id{i}" for i in range(len(ids)))
+        params = {f"id{i}": v for i, v in enumerate(ids)}
+        await session.execute(
+            text(f"DELETE FROM product_aliases WHERE id IN ({placeholders})"), params
+        )
+        await session.commit()
+        return {"deleted": len(ids)}
+
+
 @router.get("/products/search")
-async def search_products_for_select(q: str = "", limit: int = 20):
+async def search_products_for_select(q: str = "", limit: int = 50):
     """Autocomplete for product selector in UI."""
     q = (q or "").strip()
     if len(q) < 2:
