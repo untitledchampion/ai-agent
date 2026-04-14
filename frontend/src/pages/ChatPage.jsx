@@ -46,40 +46,79 @@ export default function ChatPage() {
     setLoading(true);
     setSelectedMsgId(null);
 
+    const agentId = Date.now() + 1;
+    // Placeholder "thinking" message — debug arrives progressively via SSE
+    setMessages(prev => [
+      ...prev,
+      { role: 'agent', text: '', id: agentId, streaming: true, debug: {} },
+    ]);
+    setSelectedMsgId(agentId);
+
+    const updateAgent = (patch) => {
+      setMessages(prev => prev.map(m => m.id === agentId ? { ...m, ...patch, debug: { ...(m.debug || {}), ...(patch.debug || {}) } } : m));
+    };
+
     try {
-      const res = await sendMessage(chatId, text);
-      const agentId = Date.now() + 1;
-      setMessages(prev => [
-        ...prev,
-        {
-          role: 'agent',
-          text: res.response,
-          id: agentId,
-          scene_slug: res.scene_slug,
-          confidence: res.confidence,
-          debug: {
-            triage: res.triage,
-            scene_slug: res.scene_slug,
-            scene_name: res.scene_name,
-            confidence: res.confidence,
-            action: res.action,
-            scene_decision: res.scene_decision,
-            tools_results: res.tools_results,
-            scene_data: res.scene_data,
-            latency_ms: res.latency_ms,
-            classifier_tokens: res.classifier_tokens,
-            responder_tokens: res.responder_tokens,
-            cost_usd: res.cost_usd,
-            escalation_card: res.escalation_card,
-          },
-        },
-      ]);
-      setSelectedMsgId(agentId);
+      const resp = await fetch('/api/chat/stream', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chat_id: chatId, message: text }),
+      });
+      if (!resp.ok || !resp.body) throw new Error(`HTTP ${resp.status}`);
+
+      const reader = resp.body.getReader();
+      const decoder = new TextDecoder();
+      let buf = '';
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        const parts = buf.split('\n\n');
+        buf = parts.pop();
+        for (const chunk of parts) {
+          const line = chunk.split('\n').find(l => l.startsWith('data: '));
+          if (!line) continue;
+          const ev = JSON.parse(line.slice(6));
+          if (ev.type === 'triage') {
+            updateAgent({
+              scene_slug: ev.triage?.scene,
+              confidence: ev.triage?.confidence,
+              debug: { triage: ev.triage, scene_decision: ev.scene_decision, classifier_tokens: ev.classifier_tokens },
+            });
+          } else if (ev.type === 'tools') {
+            updateAgent({
+              scene_slug: ev.scene_slug,
+              debug: { tools_results: ev.tools_results, scene_name: ev.scene_name, scene_data: ev.scene_data },
+            });
+          } else if (ev.type === 'done') {
+            updateAgent({
+              text: ev.response,
+              streaming: false,
+              scene_slug: ev.scene_slug,
+              confidence: ev.confidence,
+              debug: {
+                triage: ev.triage,
+                scene_slug: ev.scene_slug,
+                scene_name: ev.scene_name,
+                confidence: ev.confidence,
+                action: ev.action,
+                scene_decision: ev.scene_decision,
+                tools_results: ev.tools_results,
+                scene_data: ev.scene_data,
+                latency_ms: ev.latency_ms,
+                classifier_tokens: ev.classifier_tokens,
+                responder_tokens: ev.responder_tokens,
+                cost_usd: ev.cost_usd,
+                escalation_card: ev.escalation_card,
+              },
+            });
+          } else if (ev.type === 'error') {
+            updateAgent({ text: `Ошибка: ${ev.error}`, streaming: false });
+          }
+        }
+      }
     } catch (err) {
-      setMessages(prev => [
-        ...prev,
-        { role: 'agent', text: `Ошибка: ${err.message}`, id: Date.now() + 1 },
-      ]);
+      updateAgent({ text: `Ошибка: ${err.message}`, streaming: false });
     } finally {
       setLoading(false);
     }
@@ -251,7 +290,8 @@ export default function ChatPage() {
 }
 
 function AgentMessage({ msg, selected, onSelect }) {
-  const [expanded, setExpanded] = useState(false);
+  const [userExpanded, setUserExpanded] = useState(false);
+  const expanded = msg.streaming ? true : userExpanded;
 
   if (msg.role === 'client') {
     return (
@@ -271,8 +311,10 @@ function AgentMessage({ msg, selected, onSelect }) {
           msg.debug ? 'cursor-pointer hover:shadow-md' : ''
         } ${selected ? 'border-blue-400 ring-2 ring-blue-100' : 'border-gray-200'}`}
       >
-        {msg.text}
-        {msg.debug && (
+        {msg.text ? msg.text : msg.streaming ? (
+          <span className="text-gray-400 italic">Думаю<span className="inline-block animate-pulse">…</span></span>
+        ) : null}
+        {msg.debug && !msg.streaming && (
           <div className="mt-1.5 flex items-center gap-2 text-xs opacity-50">
             {msg.scene_slug && <span>{msg.scene_slug}</span>}
             {msg.confidence > 0 && <span>{(msg.confidence * 100).toFixed(0)}%</span>}
@@ -290,24 +332,30 @@ function AgentMessage({ msg, selected, onSelect }) {
       </div>
       {msg.debug && (
         <>
-          <button
-            onClick={() => setExpanded(!expanded)}
-            className="text-[10px] text-gray-400 hover:text-gray-600 px-2 py-0.5 rounded"
-          >
-            {expanded ? '▾ Скрыть отладку' : '▸ Отладка'}
-          </button>
-          {expanded && <InlineDebug debug={msg.debug} />}
+          {!msg.streaming && (
+            <button
+              onClick={() => setUserExpanded(!userExpanded)}
+              className="text-[10px] text-gray-400 hover:text-gray-600 px-2 py-0.5 rounded"
+            >
+              {expanded ? '▾ Скрыть отладку' : '▸ Отладка'}
+            </button>
+          )}
+          {expanded && <InlineDebug debug={msg.debug} streaming={msg.streaming} />}
         </>
       )}
     </div>
   );
 }
 
-function InlineDebug({ debug }) {
+function InlineDebug({ debug, streaming }) {
   const extracted = debug.triage?.extracted || {};
   const items = extracted.items || extracted.positions || null;
   const searchResult = (debug.tools_results || []).find(t => t.tool_slug === 'search_products');
   const searchItems = searchResult?.data?.items || [];
+
+  const triageReady = !!debug.triage;
+  const toolsReady = !!searchResult || (debug.tools_results && debug.tools_results.length > 0);
+  const responderReady = !streaming;
 
   return (
     <div className="max-w-2xl w-full bg-gray-50 border border-gray-200 rounded-lg p-3 text-xs space-y-3">
@@ -315,7 +363,8 @@ function InlineDebug({ debug }) {
       <Stage
         num={1}
         title="Разбор сообщения (Triage LLM)"
-        meta={`${debug.triage?.action || '—'} · ${debug.scene_slug || '—'} · ${((debug.confidence || 0) * 100).toFixed(0)}%`}
+        meta={triageReady ? `${debug.triage?.action || '—'} · ${debug.scene_slug || '—'} · ${((debug.confidence || 0) * 100).toFixed(0)}%` : 'ожидание…'}
+        dim={!triageReady}
       >
         {debug.triage?.reason && (
           <div className="text-gray-500 italic mb-1.5">{debug.triage.reason}</div>
@@ -352,11 +401,12 @@ function InlineDebug({ debug }) {
       </Stage>
 
       {/* Stage 2: Search */}
-      {searchResult && (
+      {(searchResult || streaming) && (
         <Stage
           num={2}
           title="Результаты поиска по прайсу"
-          meta={`${searchResult.success ? '✓' : '✗'} ${searchItems.length} позиций · ${searchResult.latency_ms}ms`}
+          meta={searchResult ? `${searchResult.success ? '✓' : '✗'} ${searchItems.length} позиций · ${searchResult.latency_ms}ms` : 'ожидание…'}
+          dim={!toolsReady}
         >
           {searchItems.length > 0 ? (
             <div className="space-y-2">
@@ -400,7 +450,8 @@ function InlineDebug({ debug }) {
       <Stage
         num={3}
         title="Ответ Responder LLM"
-        meta={`${debug.responder_tokens || 0} токенов · $${(debug.cost_usd || 0).toFixed(5)} · ${debug.latency_ms}ms`}
+        meta={responderReady ? `${debug.responder_tokens || 0} токенов · $${(debug.cost_usd || 0).toFixed(5)} · ${debug.latency_ms}ms` : 'генерация…'}
+        dim={!responderReady}
       >
         <div className="text-gray-500 text-[10px]">
           Итоговый ответ клиенту показан в сообщении выше. Здесь — что LLM выбрала из кандидатов.
@@ -415,12 +466,12 @@ function InlineDebug({ debug }) {
   );
 }
 
-function Stage({ num, title, meta, children }) {
+function Stage({ num, title, meta, children, dim }) {
   return (
-    <div>
+    <div className={dim ? 'opacity-40' : ''}>
       <div className="flex items-center justify-between mb-1">
         <div className="flex items-center gap-2">
-          <span className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-blue-600 text-white text-[10px] font-semibold">{num}</span>
+          <span className={`inline-flex items-center justify-center w-4 h-4 rounded-full text-white text-[10px] font-semibold ${dim ? 'bg-gray-400' : 'bg-blue-600'}`}>{num}</span>
           <span className="font-medium text-gray-700">{title}</span>
         </div>
         {meta && <span className="text-[10px] text-gray-500 font-mono">{meta}</span>}

@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import asyncio
+import json
 from typing import Optional
 
 from pydantic import BaseModel
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import StreamingResponse
 from sqlalchemy import select, delete
 from sqlalchemy.orm import selectinload
 
@@ -69,6 +72,71 @@ async def send_message(req: SendMessageRequest):
         classifier_tokens=result.classifier_tokens,
         responder_tokens=result.responder_tokens,
         cost_usd=result.total_cost_usd,
+    )
+
+
+@router.post("/stream")
+async def stream_message(req: SendMessageRequest):
+    """SSE streaming variant of /send. Emits triage, tools, done events."""
+    if not req.message.strip():
+        raise HTTPException(400, "Message cannot be empty")
+
+    queue: asyncio.Queue = asyncio.Queue()
+    SENTINEL = object()
+
+    async def emit(payload):
+        await queue.put(payload)
+
+    async def worker():
+        try:
+            result = await process_message(
+                chat_id=req.chat_id,
+                message=req.message.strip(),
+                messenger_type=req.messenger_type,
+                emit=emit,
+            )
+            await queue.put({
+                "type": "done",
+                "response": result.response_text,
+                "scene_slug": result.scene_slug,
+                "scene_name": result.scene_name,
+                "confidence": result.confidence,
+                "action": result.action,
+                "escalation_card": result.escalation_card,
+                "triage": result.triage_result,
+                "scene_decision": result.scene_decision,
+                "tools_results": result.tools_results,
+                "scene_data": result.scene_data,
+                "latency_ms": result.total_latency_ms,
+                "classifier_tokens": result.classifier_tokens,
+                "responder_tokens": result.responder_tokens,
+                "cost_usd": result.total_cost_usd,
+            })
+        except Exception as e:
+            await queue.put({"type": "error", "error": str(e)})
+        finally:
+            await queue.put(SENTINEL)
+
+    async def sse():
+        task = asyncio.create_task(worker())
+        try:
+            while True:
+                item = await queue.get()
+                if item is SENTINEL:
+                    break
+                yield f"data: {json.dumps(item, ensure_ascii=False)}\n\n"
+        finally:
+            if not task.done():
+                task.cancel()
+
+    return StreamingResponse(
+        sse(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",  # disable nginx buffering
+            "Connection": "keep-alive",
+        },
     )
 
 

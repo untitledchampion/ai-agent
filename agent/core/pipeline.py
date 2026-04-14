@@ -62,14 +62,25 @@ async def process_message(
     chat_id: str,
     message: str,
     messenger_type: str = "test",
+    emit=None,
 ) -> PipelineResult:
     """Process a single client message through the pipeline.
 
     Flow: Triage → Tools (optional) → Responder
     No matching scenario = no response (action="no_match").
+
+    If `emit` is provided (async callable), it is invoked at each stage with a
+    dict {type: "triage"|"tools"|"done", ...}. Used for SSE streaming.
     """
     start = time.monotonic()
     result = PipelineResult(response_text="")
+
+    async def _emit(payload):
+        if emit is not None:
+            try:
+                await emit(payload)
+            except Exception as e:
+                logger.warning("emit failed: %s", e)
 
     async with async_session() as session:
         # ── 1. Load configuration ──
@@ -116,6 +127,13 @@ async def process_message(
         result.confidence = triage_result.confidence
         result.scene_decision = triage_result.action.lower()
         result.classifier_tokens = triage_result.input_tokens + triage_result.output_tokens
+
+        await _emit({
+            "type": "triage",
+            "triage": result.triage_result,
+            "scene_decision": result.scene_decision,
+            "classifier_tokens": result.classifier_tokens,
+        })
 
         # ── 5. Find the matching scene ──
         scene_config = None
@@ -188,6 +206,14 @@ async def process_message(
                 for tr in tool_results
             ]
             result.tools_results = tool_results_list
+
+        await _emit({
+            "type": "tools",
+            "tools_results": tool_results_list,
+            "scene_slug": result.scene_slug,
+            "scene_name": result.scene_name,
+            "scene_data": result.scene_data,
+        })
 
         # ── 9. Generate response ──
         resp = await generate_response(
