@@ -153,17 +153,20 @@ export default function KnowledgePage() {
   const [loading, setLoading] = useState(false);
   const [modal, setModal] = useState(null); // null | {} | {id, alias, product_name}
   const timer = useRef(null);
+  const reqSeq = useRef(0);
 
   const load = async (query = q) => {
+    const myReq = ++reqSeq.current;
     setLoading(true);
     try {
       const res = await listAliases(query, 500);
+      if (myReq !== reqSeq.current) return; // stale — ignore
       setItems(res.items || []);
       setTotal(res.total || 0);
     } catch (e) {
-      console.error(e);
+      if (myReq === reqSeq.current) console.error(e);
     } finally {
-      setLoading(false);
+      if (myReq === reqSeq.current) setLoading(false);
     }
   };
 
