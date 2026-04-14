@@ -103,10 +103,25 @@ async def update_alias(alias_id: int, body: AliasIn):
     if not alias or not name:
         raise HTTPException(400, "alias and product_name required")
     async with async_session() as session:
-        await session.execute(text(
-            "UPDATE product_aliases SET alias=:a, product_name=:n WHERE id=:id"
-        ), {"a": alias, "n": name, "id": alias_id})
-        await session.commit()
+        # Проверяем: нет ли уже такой же пары (alias, product_name) в другой строке
+        existing = (await session.execute(text(
+            "SELECT id FROM product_aliases WHERE alias=:a AND product_name=:n AND id!=:id"
+        ), {"a": alias, "n": name, "id": alias_id})).scalar()
+        if existing:
+            # Такой алиас к этому товару уже есть — удаляем текущий (дубль),
+            # возвращаем существующий.
+            await session.execute(text(
+                "DELETE FROM product_aliases WHERE id=:id"
+            ), {"id": alias_id})
+            await session.commit()
+            return {"id": existing, "alias": alias, "product_name": name, "merged": True}
+        try:
+            await session.execute(text(
+                "UPDATE product_aliases SET alias=:a, product_name=:n WHERE id=:id"
+            ), {"a": alias, "n": name, "id": alias_id})
+            await session.commit()
+        except Exception as e:
+            raise HTTPException(409, f"Конфликт: {e}")
         return {"id": alias_id, "alias": alias, "product_name": name}
 
 
