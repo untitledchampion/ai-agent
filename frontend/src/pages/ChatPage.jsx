@@ -47,15 +47,24 @@ export default function ChatPage() {
     setSelectedMsgId(null);
 
     const agentId = Date.now() + 1;
-    // Placeholder "thinking" message — debug arrives progressively via SSE
+    // Placeholder "thinking" message — narrative lines accumulate as events arrive
     setMessages(prev => [
       ...prev,
-      { role: 'agent', text: '', id: agentId, streaming: true, debug: {} },
+      { role: 'agent', text: '', id: agentId, streaming: true, debug: {}, thinking: ['⋯ Разбираю сообщение…'] },
     ]);
     setSelectedMsgId(agentId);
 
     const updateAgent = (patch) => {
       setMessages(prev => prev.map(m => m.id === agentId ? { ...m, ...patch, debug: { ...(m.debug || {}), ...(patch.debug || {}) } } : m));
+    };
+
+    const fmtItems = (items) => {
+      if (!items || !Array.isArray(items) || items.length === 0) return null;
+      return items.map(it => {
+        const name = it.name || it.query_name || '';
+        const qty = it.qty || it.quantity;
+        return qty ? `${name} (${qty})` : name;
+      }).join('; ');
     };
 
     try {
@@ -80,20 +89,40 @@ export default function ChatPage() {
           if (!line) continue;
           const ev = JSON.parse(line.slice(6));
           if (ev.type === 'triage') {
+            const items = ev.triage?.extracted?.items || ev.triage?.extracted?.positions;
+            const summary = fmtItems(items) || ev.triage?.scene || 'нет позиций';
             updateAgent({
               scene_slug: ev.triage?.scene,
               confidence: ev.triage?.confidence,
+              thinking: [
+                `✓ Разобрано: ${summary}`,
+                '⋯ Ищу в прайсе…',
+              ],
               debug: { triage: ev.triage, scene_decision: ev.scene_decision, classifier_tokens: ev.classifier_tokens },
             });
           } else if (ev.type === 'tools') {
-            updateAgent({
-              scene_slug: ev.scene_slug,
-              debug: { tools_results: ev.tools_results, scene_name: ev.scene_name, scene_data: ev.scene_data },
-            });
+            const search = (ev.tools_results || []).find(t => t.tool_slug === 'search_products');
+            const nItems = search?.data?.items?.length || 0;
+            const totalCands = (search?.data?.items || []).reduce((s, it) => s + (it.candidates?.length || 0), 0);
+            setMessages(prev => prev.map(m => {
+              if (m.id !== agentId) return m;
+              const kept = (m.thinking || []).filter(l => l.startsWith('✓'));
+              return {
+                ...m,
+                scene_slug: ev.scene_slug,
+                debug: { ...(m.debug || {}), tools_results: ev.tools_results, scene_name: ev.scene_name, scene_data: ev.scene_data },
+                thinking: [
+                  ...kept,
+                  `✓ Найдено ${nItems} позиций${totalCands ? ` (${totalCands} кандидатов)` : ''}`,
+                  '⋯ Формулирую ответ…',
+                ],
+              };
+            }));
           } else if (ev.type === 'done') {
             updateAgent({
               text: ev.response,
               streaming: false,
+              thinking: undefined,
               scene_slug: ev.scene_slug,
               confidence: ev.confidence,
               debug: {
@@ -290,8 +319,7 @@ export default function ChatPage() {
 }
 
 function AgentMessage({ msg, selected, onSelect }) {
-  const [userExpanded, setUserExpanded] = useState(false);
-  const expanded = msg.streaming ? true : userExpanded;
+  const [expanded, setExpanded] = useState(false);
 
   if (msg.role === 'client') {
     return (
@@ -312,7 +340,11 @@ function AgentMessage({ msg, selected, onSelect }) {
         } ${selected ? 'border-blue-400 ring-2 ring-blue-100' : 'border-gray-200'}`}
       >
         {msg.text ? msg.text : msg.streaming ? (
-          <span className="text-gray-400 italic">Думаю<span className="inline-block animate-pulse">…</span></span>
+          <div className="text-gray-400 italic text-[13px] space-y-0.5">
+            {(msg.thinking || []).map((line, i) => (
+              <div key={i} className={line.startsWith('⋯') ? 'animate-pulse' : ''}>{line}</div>
+            ))}
+          </div>
         ) : null}
         {msg.debug && !msg.streaming && (
           <div className="mt-1.5 flex items-center gap-2 text-xs opacity-50">
@@ -330,17 +362,15 @@ function AgentMessage({ msg, selected, onSelect }) {
           </div>
         )}
       </div>
-      {msg.debug && (
+      {msg.debug && !msg.streaming && (
         <>
-          {!msg.streaming && (
-            <button
-              onClick={() => setUserExpanded(!userExpanded)}
-              className="text-[10px] text-gray-400 hover:text-gray-600 px-2 py-0.5 rounded"
-            >
-              {expanded ? '▾ Скрыть отладку' : '▸ Отладка'}
-            </button>
-          )}
-          {expanded && <InlineDebug debug={msg.debug} streaming={msg.streaming} />}
+          <button
+            onClick={() => setExpanded(!expanded)}
+            className="text-[10px] text-gray-400 hover:text-gray-600 px-2 py-0.5 rounded"
+          >
+            {expanded ? '▾ Скрыть отладку' : '▸ Отладка'}
+          </button>
+          {expanded && <InlineDebug debug={msg.debug} />}
         </>
       )}
     </div>
