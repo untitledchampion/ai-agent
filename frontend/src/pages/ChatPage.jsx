@@ -318,6 +318,34 @@ export default function ChatPage() {
   );
 }
 
+// Parses agent text, extracting trailing `IMAGES: path1, path2` directive.
+// Supported forms:
+//   IMAGES: /static/knowledge_images/foo.png, bar.png
+// Returns { cleanText, images: string[] }.
+function parseAgentText(raw) {
+  if (!raw) return { cleanText: raw || '', images: [] };
+  const lines = raw.split('\n');
+  const images = [];
+  let lastContentIdx = lines.length;
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const m = lines[i].match(/^\s*IMAGES:\s*(.+?)\s*$/i);
+    if (m) {
+      m[1].split(',').map(s => s.trim()).filter(Boolean).forEach(p => {
+        // Normalize: accept bare filename or full /static/... path
+        const url = p.startsWith('/static/') || p.startsWith('http')
+          ? p
+          : `/static/knowledge_images/${p}`;
+        images.unshift(url);
+      });
+      lastContentIdx = i;
+    } else if (lines[i].trim() !== '') {
+      break;
+    }
+  }
+  const cleanText = lines.slice(0, lastContentIdx).join('\n').trimEnd();
+  return { cleanText, images };
+}
+
 function AgentMessage({ msg, selected, onSelect }) {
   const [expanded, setExpanded] = useState(false);
 
@@ -330,6 +358,8 @@ function AgentMessage({ msg, selected, onSelect }) {
       </div>
     );
   }
+
+  const parsed = msg.text ? parseAgentText(msg.text) : { cleanText: '', images: [] };
 
   return (
     <div className="flex flex-col items-start gap-1">

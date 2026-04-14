@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
@@ -73,6 +74,15 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Static: knowledge-base images (served at /static/knowledge_images/*)
+_kb_images_dir = os.path.join(os.path.dirname(__file__), "..", "data", "knowledge_images")
+if os.path.isdir(_kb_images_dir):
+    app.mount(
+        "/static/knowledge_images",
+        StaticFiles(directory=_kb_images_dir),
+        name="knowledge_images",
+    )
+
 # API routes
 app.include_router(chat_router)
 app.include_router(scenes_router)
@@ -93,7 +103,6 @@ async def health():
 
 # Serve frontend static files (built React app)
 # Static assets (JS, CSS, images) served directly, SPA routes fall back to index.html
-import os
 from fastapi.responses import FileResponse
 
 frontend_dist = os.path.join(os.path.dirname(__file__), "..", "frontend", "dist")

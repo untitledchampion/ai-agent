@@ -16,6 +16,7 @@ from dataclasses import dataclass, field
 import httpx
 
 from agent.core import product_search
+from agent.core import knowledge_search
 
 logger = logging.getLogger(__name__)
 
@@ -339,8 +340,21 @@ def _search_products_tool(args: dict) -> dict:
     return {"results": product_search.search_products(q, k=int(args.get("k", 10)))}
 
 
+def _search_knowledge_tool(args: dict) -> dict:
+    """Local tool: top-k чанков базы знаний (профили, системы, правила).
+
+    args: { query: str, k?: int=3 }
+    returns: { chunks: [...] } — каждый чанк с title, content, images, products, escalate.
+    """
+    q = str(args.get("query", "")).strip()
+    k = int(args.get("k", 3))
+    chunks = knowledge_search.search_knowledge(q, k=k)
+    return {"chunks": chunks}
+
+
 LOCAL_TOOLS: dict = {
     "search_products": _search_products_tool,
+    "search_knowledge": _search_knowledge_tool,
 }
 
 

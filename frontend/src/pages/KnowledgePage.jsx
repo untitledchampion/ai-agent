@@ -72,7 +72,7 @@ function ProductPicker({ value, onPick, invalid }) {
             (invalid ? 'border-red-400 bg-red-50' : 'border-gray-300 bg-gray-50')
           }
         >
-          <span className="flex-1 truncate">{value}</span>
+          <span className="flex-1 break-words" title={value}>{value}</span>
           <button
             type="button"
             onClick={() => setOpen(true)}
