@@ -478,6 +478,7 @@ export default function KnowledgePage() {
 
       {modal && (
         <AliasModal
+          key={modal.id || 'new'}
           initial={modal.id ? modal : null}
           onClose={() => setModal(null)}
           onSaved={() => {
