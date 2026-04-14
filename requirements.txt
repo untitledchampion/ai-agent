@@ -14,3 +14,4 @@ torch>=2.2
 transformers>=4.40
 sqlite-vec>=0.1.6
 voyageai>=0.2
+requests>=2.32

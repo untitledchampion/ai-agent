@@ -16,6 +16,7 @@ from agent.api.scenes import router as scenes_router
 from agent.api.tools import router as tools_router
 from agent.api.tone import router as tone_router
 from agent.api.knowledge import router as knowledge_router
+from agent.api.sync import router as sync_router
 
 logging.basicConfig(
     level=logging.DEBUG if settings.debug else logging.INFO,
@@ -78,6 +79,7 @@ app.include_router(scenes_router)
 app.include_router(tools_router)
 app.include_router(tone_router)
 app.include_router(knowledge_router)
+app.include_router(sync_router)
 
 
 @app.get("/api/health")
