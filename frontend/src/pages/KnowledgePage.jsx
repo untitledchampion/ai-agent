@@ -244,7 +244,7 @@ export default function KnowledgePage() {
   const [modal, setModal] = useState(null);
   const [selected, setSelected] = useState(() => new Set());
   const [page, setPage] = useState(1);
-  const pageSize = 50;
+  const pageSize = 500;
   const timer = useRef(null);
   const reqSeq = useRef(0);
 
