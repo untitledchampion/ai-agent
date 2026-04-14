@@ -114,20 +114,11 @@ def lookup_by_alias(query: str) -> list[dict]:
             """
             SELECT p.id, p.code, p.name, p.category, p.color, p.width,
                    p.price_dealer, p.unit AS unit_raw,
-                   m.unit_norm, m.pieces_length_m,
-                   kpa.match_type, kpa.match_confidence
-            FROM knowledge_product_aliases kpa
-            JOIN products p ON p.id = kpa.product_id
+                   m.unit_norm, m.pieces_length_m
+            FROM product_aliases pa
+            JOIN products p ON p.name = pa.product_name
             LEFT JOIN products_meta m ON m.product_id = p.id
-            WHERE kpa.alias_norm = ?
-            ORDER BY
-              CASE kpa.match_type
-                WHEN 'manual' THEN 0
-                WHEN 'exact'  THEN 1
-                WHEN 'fuzzy'  THEN 2
-                ELSE 3
-              END,
-              kpa.match_confidence DESC
+            WHERE pa.alias = ?
             """,
             (q,),
         ).fetchall()
@@ -142,7 +133,7 @@ def lookup_by_alias(query: str) -> list[dict]:
     for row in rows:
         d = dict(row)
         d["distance"] = 0.0
-        d["alias_match"] = d.pop("match_type")
+        d["alias_match"] = "manual"
         results.append(d)
     return results
 

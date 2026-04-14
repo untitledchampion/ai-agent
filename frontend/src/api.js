@@ -55,5 +55,17 @@ export const updateTone = (data) =>
   request('/tone', { method: 'PUT', body: JSON.stringify(data) });
 export const previewTonePrompt = () => request('/tone/preview');
 
+// Knowledge (product aliases)
+export const listAliases = (q = '', limit = 500) =>
+  request(`/knowledge/aliases?q=${encodeURIComponent(q)}&limit=${limit}`);
+export const createAlias = (data) =>
+  request('/knowledge/aliases', { method: 'POST', body: JSON.stringify(data) });
+export const updateAlias = (id, data) =>
+  request(`/knowledge/aliases/${id}`, { method: 'PUT', body: JSON.stringify(data) });
+export const deleteAlias = (id) =>
+  request(`/knowledge/aliases/${id}`, { method: 'DELETE' });
+export const searchProductsForSelect = (q) =>
+  request(`/knowledge/products/search?q=${encodeURIComponent(q)}`);
+
 // Health
 export const getHealth = () => request('/health');
