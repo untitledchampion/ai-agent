@@ -50,7 +50,7 @@ export default function ChatPage() {
     // Placeholder "thinking" message — narrative lines accumulate as events arrive
     setMessages(prev => [
       ...prev,
-      { role: 'agent', text: '', id: agentId, streaming: true, debug: {}, thinking: ['⋯ Разбираю сообщение…'] },
+      { role: 'agent', text: '', id: agentId, streaming: true, debug: {}, thinking: ['⋯ Думаю над вашим запросом…'] },
     ]);
     setSelectedMsgId(agentId);
 
