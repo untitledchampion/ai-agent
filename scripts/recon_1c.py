@@ -32,7 +32,7 @@ def _norm(s: str) -> str:
 
 
 def fetch_all_nomenclature() -> list[dict]:
-    """Paginate Catalog_Номенклатура, only non-folders."""
+    """Paginate Catalog_Номенклатура in full, client-side filter folders."""
     session = requests.Session()
     session.auth = (ODATA_USER, ODATA_PASS)
     session.headers["Accept"] = "application/json"
@@ -42,8 +42,7 @@ def fetch_all_nomenclature() -> list[dict]:
     t0 = time.time()
     while True:
         params = {
-            "$filter": "IsFolder eq false",
-            "$select": "Ref_Key,Code,Артикул,Description,DeletionMark,ЕдиницаИзмерения_Key",
+            "$select": "Ref_Key,Code,Артикул,Description,DeletionMark,IsFolder,Parent_Key,ЕдиницаИзмерения_Key",
             "$top": PAGE_SIZE,
             "$skip": skip,
             "$format": "json",
@@ -54,7 +53,7 @@ def fetch_all_nomenclature() -> list[dict]:
         if not batch:
             break
         results.extend(batch)
-        print(f"  fetched {len(results)} in {time.time()-t0:.1f}s", flush=True)
+        print(f"  fetched {len(results)} total in {time.time()-t0:.1f}s", flush=True)
         if len(batch) < PAGE_SIZE:
             break
         skip += PAGE_SIZE
@@ -70,15 +69,20 @@ def main(db_path: str) -> None:
         print(f"[recon] ERROR fetching from 1C: {e}")
         return
 
-    print(f"[recon] 1C total (not folders): {len(items_1c)}")
+    all_count = len(items_1c)
+    folders = [x for x in items_1c if x.get("IsFolder")]
+    deleted = [x for x in items_1c if x.get("DeletionMark")]
+    items_1c = [x for x in items_1c if not x.get("IsFolder") and not x.get("DeletionMark")]
 
-    # 1C stats
+    print(f"[recon] 1C total raw:        {all_count}")
+    print(f"[recon] 1C folders:          {len(folders)}")
+    print(f"[recon] 1C marked deleted:   {len(deleted)}")
+    print(f"[recon] 1C real products:    {len(items_1c)}")
+
     with_code = sum(1 for x in items_1c if x.get("Code"))
     with_article = sum(1 for x in items_1c if x.get("Артикул"))
-    deleted = sum(1 for x in items_1c if x.get("DeletionMark"))
-    print(f"[recon] 1C with Code: {with_code}")
-    print(f"[recon] 1C with Артикул: {with_article}")
-    print(f"[recon] 1C DeletionMark=true: {deleted}")
+    print(f"[recon] of those, with Code: {with_code}")
+    print(f"[recon] of those, with Арт.: {with_article}")
 
     # Build lookup by normalized name
     by_name_1c: dict[str, list[dict]] = {}
