@@ -86,8 +86,12 @@ def _build_scenarios_block(scenes: list[dict]) -> str:
             for f in fields:
                 fname = f.get("name", "")
                 fprompt = f.get("prompt", "")
+                ftype = f.get("type", "")
                 req = " (обязательное)" if f.get("required") else ""
-                lines.append(f"      - {fname}{req}: {fprompt}")
+                type_hint = ""
+                if ftype == "product_list":
+                    type_hint = ' [массив {name, qty}: name — название БЕЗ количества; qty — число+единица ("60м","5шт","10м2") или null. Количество часто отделяется " -", " —", " ": "профиль стена -60м"→name="профиль стена",qty="60м". Не путай с артикулом P-60, АТ-2461 — там нет единицы после числа]'
+                lines.append(f"      - {fname}{req}: {fprompt}{type_hint}")
     return "\n".join(lines) or "  (нет активных сценариев — нужна эскалация)"
 
 
