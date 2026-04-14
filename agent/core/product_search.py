@@ -100,7 +100,7 @@ def search_products(query: str, k: int = 10) -> list[dict]:
     try:
         rows = conn.execute(
             """
-            SELECT p.id, p.code, p.name, p.category, p.color, p.width,
+            SELECT p.id, p.code, p.name, p.ref_key, p.category, p.color, p.width,
                    p.price_dealer, p.unit AS unit_raw,
                    m.unit_norm, m.pieces_length_m,
                    v.distance
@@ -115,7 +115,27 @@ def search_products(query: str, k: int = 10) -> list[dict]:
     finally:
         conn.close()
 
-    return _rerank_by_tokens(q, [dict(r) for r in rows])
+    results = _rerank_by_tokens(q, [dict(r) for r in rows])
+
+    # Обогащаем live-ценой из 1С (БП2) для тех, у кого есть ref_key
+    try:
+        from agent.core.prices_1c import fetch_prices
+
+        refs = [r["ref_key"] for r in results if r.get("ref_key")]
+        if refs:
+            prices = fetch_prices(refs)
+            for r in results:
+                rk = r.get("ref_key")
+                if rk and rk in prices:
+                    r["price_local"] = r.get("price_dealer")
+                    r["price_dealer"] = prices[rk]
+                    r["price_source"] = "1c"
+                else:
+                    r["price_source"] = "local"
+    except Exception as e:
+        logger.warning("live price enrichment failed: %s", e)
+
+    return results
 
 
 def _normalize_alias_query(query: str) -> str:
@@ -143,7 +163,7 @@ def lookup_by_alias(query: str) -> list[dict]:
     try:
         rows = conn.execute(
             """
-            SELECT p.id, p.code, p.name, p.category, p.color, p.width,
+            SELECT p.id, p.code, p.name, p.ref_key, p.category, p.color, p.width,
                    p.price_dealer, p.unit AS unit_raw,
                    m.unit_norm, m.pieces_length_m
             FROM product_aliases pa
