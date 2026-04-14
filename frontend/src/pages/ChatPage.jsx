@@ -22,7 +22,9 @@ export default function ChatPage() {
         text: m.text,
         scene_slug: m.scene_slug,
         confidence: m.confidence,
-        debug: m.debug || null,
+        debug: m.debug
+          ? { ...m.debug, tools_results: m.tools_called || [] }
+          : null,
       }));
       setMessages(msgs);
       // Select last agent message
