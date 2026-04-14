@@ -127,38 +127,12 @@ export default function ChatPage() {
             </div>
           )}
           {messages.map((msg) => (
-            <div
+            <AgentMessage
               key={msg.id}
-              className={`flex ${msg.role === 'client' ? 'justify-end' : 'justify-start'}`}
-            >
-              <div
-                onClick={() => msg.debug && setSelectedMsgId(msg.id)}
-                className={`max-w-md px-4 py-2.5 rounded-2xl text-sm whitespace-pre-wrap transition-all ${
-                  msg.role === 'client'
-                    ? 'bg-blue-600 text-white rounded-br-sm'
-                    : `bg-white border text-gray-800 rounded-bl-sm ${
-                        msg.debug ? 'cursor-pointer hover:shadow-md' : ''
-                      } ${selectedMsgId === msg.id ? 'border-blue-400 ring-2 ring-blue-100' : 'border-gray-200'}`
-                }`}
-              >
-                {msg.text}
-                {msg.role === 'agent' && (
-                  <div className="mt-1.5 flex items-center gap-2 text-xs opacity-50">
-                    {msg.scene_slug && <span>{msg.scene_slug}</span>}
-                    {msg.confidence > 0 && <span>{(msg.confidence * 100).toFixed(0)}%</span>}
-                    {msg.debug?.action && (
-                      <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${
-                        msg.debug.action === 'auto_reply' ? 'bg-green-50 text-green-600' :
-                        msg.debug.action === 'escalation' ? 'bg-orange-50 text-orange-600' :
-                        msg.debug.action === 'resolved' ? 'bg-blue-50 text-blue-600' : ''
-                      }`}>
-                        {msg.debug.action}
-                      </span>
-                    )}
-                  </div>
-                )}
-              </div>
-            </div>
+              msg={msg}
+              selected={selectedMsgId === msg.id}
+              onSelect={() => msg.debug && setSelectedMsgId(msg.id)}
+            />
           ))}
           {loading && (
             <div className="flex justify-start">
@@ -271,6 +245,176 @@ export default function ChatPage() {
         </div>
       )}
     </>
+  );
+}
+
+function AgentMessage({ msg, selected, onSelect }) {
+  const [expanded, setExpanded] = useState(false);
+
+  if (msg.role === 'client') {
+    return (
+      <div className="flex justify-end">
+        <div className="max-w-md px-4 py-2.5 rounded-2xl text-sm whitespace-pre-wrap bg-blue-600 text-white rounded-br-sm">
+          {msg.text}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col items-start gap-1">
+      <div
+        onClick={onSelect}
+        className={`max-w-md px-4 py-2.5 rounded-2xl rounded-bl-sm text-sm whitespace-pre-wrap transition-all bg-white border text-gray-800 ${
+          msg.debug ? 'cursor-pointer hover:shadow-md' : ''
+        } ${selected ? 'border-blue-400 ring-2 ring-blue-100' : 'border-gray-200'}`}
+      >
+        {msg.text}
+        {msg.debug && (
+          <div className="mt-1.5 flex items-center gap-2 text-xs opacity-50">
+            {msg.scene_slug && <span>{msg.scene_slug}</span>}
+            {msg.confidence > 0 && <span>{(msg.confidence * 100).toFixed(0)}%</span>}
+            {msg.debug?.action && (
+              <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${
+                msg.debug.action === 'auto_reply' ? 'bg-green-50 text-green-600' :
+                msg.debug.action === 'escalation' ? 'bg-orange-50 text-orange-600' :
+                msg.debug.action === 'resolved' ? 'bg-blue-50 text-blue-600' : ''
+              }`}>
+                {msg.debug.action}
+              </span>
+            )}
+          </div>
+        )}
+      </div>
+      {msg.debug && (
+        <>
+          <button
+            onClick={() => setExpanded(!expanded)}
+            className="text-[10px] text-gray-400 hover:text-gray-600 px-2 py-0.5 rounded"
+          >
+            {expanded ? '▾ Скрыть отладку' : '▸ Отладка'}
+          </button>
+          {expanded && <InlineDebug debug={msg.debug} />}
+        </>
+      )}
+    </div>
+  );
+}
+
+function InlineDebug({ debug }) {
+  const extracted = debug.triage?.extracted || {};
+  const items = extracted.items || extracted.positions || null;
+  const searchResult = (debug.tools_results || []).find(t => t.tool_slug === 'search_products');
+  const searchItems = searchResult?.data?.items || [];
+
+  return (
+    <div className="max-w-2xl w-full bg-gray-50 border border-gray-200 rounded-lg p-3 text-xs space-y-3">
+      {/* Stage 1: Triage */}
+      <Stage
+        num={1}
+        title="Разбор сообщения (Triage LLM)"
+        meta={`${debug.triage?.action || '—'} · ${debug.scene_slug || '—'} · ${((debug.confidence || 0) * 100).toFixed(0)}%`}
+      >
+        {debug.triage?.reason && (
+          <div className="text-gray-500 italic mb-1.5">{debug.triage.reason}</div>
+        )}
+        {items && Array.isArray(items) && items.length > 0 ? (
+          <div className="space-y-1">
+            {items.map((it, i) => (
+              <div key={i} className="flex items-baseline gap-2 font-mono">
+                <span className="text-gray-400">{i + 1}.</span>
+                <span className="text-gray-800">{it.name || it.query_name || JSON.stringify(it)}</span>
+                {(it.qty || it.quantity) && (
+                  <span className="text-gray-500">— {it.qty || it.quantity}</span>
+                )}
+              </div>
+            ))}
+          </div>
+        ) : Object.keys(extracted).length > 0 ? (
+          <pre className="font-mono text-[10px] text-gray-700 whitespace-pre-wrap">
+            {JSON.stringify(extracted, null, 2)}
+          </pre>
+        ) : (
+          <div className="text-gray-400">— нет извлечённых данных</div>
+        )}
+      </Stage>
+
+      {/* Stage 2: Search */}
+      {searchResult && (
+        <Stage
+          num={2}
+          title="Результаты поиска по прайсу"
+          meta={`${searchResult.success ? '✓' : '✗'} ${searchItems.length} позиций · ${searchResult.latency_ms}ms`}
+        >
+          {searchItems.length > 0 ? (
+            <div className="space-y-2">
+              {searchItems.map((item, i) => (
+                <div key={i} className="border-l-2 border-gray-300 pl-2">
+                  <div className="font-medium text-gray-800">
+                    «{item.query_name}» {item.qty && <span className="text-gray-500">· {item.qty}</span>}
+                    {item.ambiguous && <span className="ml-2 text-orange-600 text-[10px]">AMBIGUOUS ({item.close_count})</span>}
+                  </div>
+                  {item.candidates && item.candidates.length > 0 ? (
+                    <div className="mt-1 space-y-0.5">
+                      {item.candidates.slice(0, 5).map((c, j) => (
+                        <div key={j} className="font-mono text-[10px] text-gray-600 flex items-baseline gap-2">
+                          <span className="text-gray-400 w-8">{c.distance?.toFixed?.(3) || '—'}</span>
+                          <span className="flex-1">{c.name}</span>
+                          {c.price_dealer != null && <span className="text-gray-500">{c.price_dealer}₽</span>}
+                        </div>
+                      ))}
+                      {item.candidates.length > 5 && (
+                        <div className="text-[10px] text-gray-400">…и ещё {item.candidates.length - 5}</div>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="text-gray-400 text-[10px] mt-0.5">нет кандидатов</div>
+                  )}
+                  {item.computed && (
+                    <div className="text-[10px] text-green-700 mt-0.5">
+                      готовый расчёт: {item.computed.pieces} {item.computed.unit_label} × {item.computed.unit_price}₽ = {item.computed.total_price}₽
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-gray-400">— нет результатов</div>
+          )}
+        </Stage>
+      )}
+
+      {/* Stage 3: Responder */}
+      <Stage
+        num={3}
+        title="Ответ Responder LLM"
+        meta={`${debug.responder_tokens || 0} токенов · $${(debug.cost_usd || 0).toFixed(5)} · ${debug.latency_ms}ms`}
+      >
+        <div className="text-gray-500 text-[10px]">
+          Итоговый ответ клиенту показан в сообщении выше. Здесь — что LLM выбрала из кандидатов.
+        </div>
+        {debug.escalation_card && (
+          <pre className="mt-2 p-2 bg-orange-50 text-orange-800 whitespace-pre-wrap text-[10px] rounded">
+            {debug.escalation_card}
+          </pre>
+        )}
+      </Stage>
+    </div>
+  );
+}
+
+function Stage({ num, title, meta, children }) {
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-1">
+        <div className="flex items-center gap-2">
+          <span className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-blue-600 text-white text-[10px] font-semibold">{num}</span>
+          <span className="font-medium text-gray-700">{title}</span>
+        </div>
+        {meta && <span className="text-[10px] text-gray-500 font-mono">{meta}</span>}
+      </div>
+      <div className="pl-6">{children}</div>
+    </div>
   );
 }
 

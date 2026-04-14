@@ -87,6 +87,66 @@ def search_products(query: str, k: int = 10) -> list[dict]:
     return [dict(r) for r in rows]
 
 
+def _normalize_alias_query(query: str) -> str:
+    """Normalize a query for alias lookup: lower, ё→е, strip №, collapse spaces."""
+    import re as _re
+    q = (query or "").lower().replace("ё", "е").strip()
+    q = _re.sub(r"\s*№\s*", " ", q)
+    q = _re.sub(r"\s+", " ", q).strip()
+    return q
+
+
+def lookup_by_alias(query: str) -> list[dict]:
+    """Exact lookup in knowledge_product_aliases by normalized alias.
+
+    Returns a list of product dicts shaped like search hits (with distance=0.0
+    and an `alias_match` tag). Empty list if no match found.
+    Multiple results mean the alias is ambiguous (e.g. "кольцо" → 63 rings);
+    the caller should apply size/color filters to narrow down.
+    """
+    q = _normalize_alias_query(query)
+    if not q:
+        return []
+
+    conn = _open_conn()
+    try:
+        rows = conn.execute(
+            """
+            SELECT p.id, p.code, p.name, p.category, p.color, p.width,
+                   p.price_dealer, p.unit AS unit_raw,
+                   m.unit_norm, m.pieces_length_m,
+                   kpa.match_type, kpa.match_confidence
+            FROM knowledge_product_aliases kpa
+            JOIN products p ON p.id = kpa.product_id
+            LEFT JOIN products_meta m ON m.product_id = p.id
+            WHERE kpa.alias_norm = ?
+            ORDER BY
+              CASE kpa.match_type
+                WHEN 'manual' THEN 0
+                WHEN 'exact'  THEN 1
+                WHEN 'fuzzy'  THEN 2
+                ELSE 3
+              END,
+              kpa.match_confidence DESC
+            """,
+            (q,),
+        ).fetchall()
+    except sqlite3.OperationalError:
+        return []
+    finally:
+        conn.close()
+
+    if not rows:
+        return []
+    results = []
+    for row in rows:
+        d = dict(row)
+        d["distance"] = 0.0
+        d["alias_match"] = d.pop("match_type")
+        results.append(d)
+    return results
+
+
 if __name__ == "__main__":
     import json
     import sys

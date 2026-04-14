@@ -42,6 +42,10 @@ AMBIGUITY_GAP = 0.025
 _NUM = r"\d+(?:[.,]\d+)?"
 _SEP = r"[-/*xхX×]"
 _PAIR_RX = re.compile(rf"(?<!\d){_NUM}\s*{_SEP}\s*{_NUM}(?!\d)")
+# Space-separated pairs: "100 125" — both numbers must be ≥2 digits to avoid
+# false positives like "кольцо 50 5шт".  Also reject if second number is
+# followed by a unit-like letter (ш, м, к → шт/м/кг).
+_SPACE_PAIR_RX = re.compile(r"(?<!\d)(\d{2,}(?:[.,]\d+)?)\s+(\d{2,}(?:[.,]\d+)?)(?!\d)(?![шмкa-яa-z])", re.IGNORECASE)
 _LEN_M_RX = re.compile(r"(?<!\d)(\d+[.,]\d+)\s*м(?!м)(?!\w)")
 _ARTICLE_RX = re.compile(r"№\s*(\d+)")
 
@@ -73,6 +77,12 @@ def _extract_size_tokens(text: str) -> list[str]:
         parts = re.split(_SEP, m.group(0))
         canon = ":".join(_canon_num(p) for p in parts if p.strip())
         out.append(f"P{canon}")
+    # Space-separated pairs: "100 125" → P100:125
+    for m in _SPACE_PAIR_RX.finditer(n):
+        canon = f"{_canon_num(m.group(1))}:{_canon_num(m.group(2))}"
+        token = f"P{canon}"
+        if token not in out:  # avoid duplicates if already matched by _PAIR_RX
+            out.append(token)
     for m in _LEN_M_RX.finditer(n):
         out.append(f"L{_canon_num(m.group(1))}")
     for m in _ARTICLE_RX.finditer(n):
@@ -269,21 +279,31 @@ def _search_products_tool(args: dict) -> dict:
             if not name:
                 continue
 
-            hits_name = product_search.search_products(name, k=k)
-            chosen_query = name
-            chosen_hits = hits_name
+            # Knowledge-base alias: exact jargon → product_id lookup.
+            # Returns a list: 1 item = direct match, N items = ambiguous
+            # (e.g. "кольцо" → 63 rings), 0 = miss → fall back to BGE-M3.
+            alias_hits = product_search.lookup_by_alias(name)
+            if alias_hits:
+                chosen_query = name
+                # Apply same hard filters to narrow ambiguous KB hits
+                chosen_hits = _filter_by_size(name, alias_hits)
+                chosen_hits = _filter_by_color(name, chosen_hits)
+            else:
+                hits_name = product_search.search_products(name, k=k)
+                chosen_query = name
+                chosen_hits = hits_name
 
-            if qty:
-                hits_combined = product_search.search_products(f"{name} {qty}", k=k)
-                if _top1_dist(hits_combined) < _top1_dist(hits_name) - 0.01:
-                    chosen_query = f"{name} {qty}"
-                    chosen_hits = hits_combined
+                if qty:
+                    hits_combined = product_search.search_products(f"{name} {qty}", k=k)
+                    if _top1_dist(hits_combined) < _top1_dist(hits_name) - 0.01:
+                        chosen_query = f"{name} {qty}"
+                        chosen_hits = hits_combined
 
-            # Hard filters: explicit numeric size, explicit color,
-            # then collapse to top-1's product category.
-            chosen_hits = _filter_by_size(name, chosen_hits)
-            chosen_hits = _filter_by_color(name, chosen_hits)
-            chosen_hits = _filter_by_top_category(chosen_hits)
+                # Hard filters: explicit numeric size, explicit color,
+                # then collapse to top-1's product category.
+                chosen_hits = _filter_by_size(name, chosen_hits)
+                chosen_hits = _filter_by_color(name, chosen_hits)
+                chosen_hits = _filter_by_top_category(chosen_hits)
 
             # Detect ambiguity: how many candidates sit within AMBIGUITY_GAP of top-1
             close_count = 0

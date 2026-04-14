@@ -38,8 +38,8 @@ class Settings(BaseSettings):
 
     # LLM
     anthropic_api_key: str = ""
-    classifier_model: str = "claude-sonnet-4-20250514"
-    responder_model: str = "claude-sonnet-4-20250514"
+    classifier_model: str = "claude-haiku-4-5-20251001"
+    responder_model: str = "claude-haiku-4-5-20251001"
 
     # Agent
     classifier_confidence_threshold: float = 0.7
