@@ -321,17 +321,27 @@ function InlineDebug({ debug }) {
           <div className="text-gray-500 italic mb-1.5">{debug.triage.reason}</div>
         )}
         {items && Array.isArray(items) && items.length > 0 ? (
-          <div className="space-y-1">
-            {items.map((it, i) => (
-              <div key={i} className="flex items-baseline gap-2 font-mono">
-                <span className="text-gray-400">{i + 1}.</span>
-                <span className="text-gray-800">{it.name || it.query_name || JSON.stringify(it)}</span>
-                {(it.qty || it.quantity) && (
-                  <span className="text-gray-500">— {it.qty || it.quantity}</span>
-                )}
-              </div>
-            ))}
-          </div>
+          <table className="w-full text-[11px] font-mono border-collapse">
+            <thead>
+              <tr className="text-gray-400 text-left border-b border-gray-200">
+                <th className="py-1 pr-2 w-6 font-normal">#</th>
+                <th className="py-1 pr-2 font-normal">Название</th>
+                <th className="py-1 pr-2 w-24 font-normal">Кол-во</th>
+              </tr>
+            </thead>
+            <tbody>
+              {items.map((it, i) => {
+                const qty = it.qty || it.quantity;
+                return (
+                  <tr key={i} className="border-b border-gray-100 last:border-0">
+                    <td className="py-1 pr-2 text-gray-400">{i + 1}</td>
+                    <td className="py-1 pr-2 text-gray-800">{it.name || it.query_name || JSON.stringify(it)}</td>
+                    <td className="py-1 pr-2 text-gray-600">{qty || <span className="text-gray-300">—</span>}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         ) : Object.keys(extracted).length > 0 ? (
           <pre className="font-mono text-[10px] text-gray-700 whitespace-pre-wrap">
             {JSON.stringify(extracted, null, 2)}
