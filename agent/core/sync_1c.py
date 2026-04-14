@@ -134,8 +134,8 @@ def run_sync() -> dict:
         else:
             # Новый — вставляем и эмбеддим
             cur = conn.execute(
-                "INSERT INTO products(code, name, ref_key, is_legacy) VALUES (?,?,?,0)",
-                (code, name, ref),
+                "INSERT INTO products(sheet, code, name, ref_key, is_legacy) VALUES (?,?,?,?,0)",
+                ("1c", code, name, ref),
             )
             pid = cur.lastrowid
             try:
