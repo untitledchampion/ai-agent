@@ -289,15 +289,10 @@ def _search_products_tool(args: dict) -> dict:
                 chosen_hits = _filter_by_size(name, alias_hits)
                 chosen_hits = _filter_by_color(name, chosen_hits)
             else:
-                hits_name = product_search.search_products(name, k=k)
+                # Ищем только по имени — количество к поиску не относится
+                # (иначе "10 м" ложно совпадает с "10 м/уп" в упаковке).
                 chosen_query = name
-                chosen_hits = hits_name
-
-                if qty:
-                    hits_combined = product_search.search_products(f"{name} {qty}", k=k)
-                    if _top1_dist(hits_combined) < _top1_dist(hits_name) - 0.01:
-                        chosen_query = f"{name} {qty}"
-                        chosen_hits = hits_combined
+                chosen_hits = product_search.search_products(name, k=k)
 
                 # Hard filters: explicit numeric size, explicit color,
                 # then collapse to top-1's product category.
