@@ -369,13 +369,27 @@ function AgentMessage({ msg, selected, onSelect }) {
           msg.debug ? 'cursor-pointer hover:shadow-md' : ''
         } ${selected ? 'border-blue-400 ring-2 ring-blue-100' : 'border-gray-200'}`}
       >
-        {msg.text ? msg.text : msg.streaming ? (
+        {msg.text ? parsed.cleanText : msg.streaming ? (
           <div className="text-gray-400 italic text-[13px] space-y-0.5">
             {(msg.thinking || []).map((line, i) => (
               <div key={i} className={line.startsWith('⋯') ? 'animate-pulse' : ''}>{line}</div>
             ))}
           </div>
         ) : null}
+        {parsed.images.length > 0 && (
+          <div className="mt-2 grid grid-cols-2 gap-1.5">
+            {parsed.images.map((url, i) => (
+              <a key={i} href={url} target="_blank" rel="noreferrer" className="block">
+                <img
+                  src={url}
+                  alt=""
+                  className="w-full h-auto rounded border border-gray-200 object-cover max-h-48"
+                  onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                />
+              </a>
+            ))}
+          </div>
+        )}
         {msg.debug && !msg.streaming && (
           <div className="mt-1.5 flex items-center gap-2 text-xs opacity-50">
             {msg.scene_slug && <span>{msg.scene_slug}</span>}

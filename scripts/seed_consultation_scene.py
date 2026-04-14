@@ -1,19 +1,25 @@
-"""Создаёт/обновляет сценарий `product_consultation` в agent.db.
+"""Создаёт сценарий `product_consultation` в БД scenes.
 
-Сценарий отвечает на технические вопросы клиентов о натяжных потолках:
-профили, системы монтажа, теневые/парящие, гардины, правила монтажа.
+БЕЗОПАСНО ДЛЯ ПРОДА:
+  - Если сценарий уже существует, по умолчанию НИЧЕГО не меняет
+    (чтобы не снести правки менеджеров через UI).
+  - --force — перезапишет все поля значениями из этого файла.
+  - --dry-run — показать что будет сделано.
 
-Использует tool `search_knowledge` (+ опционально `search_products` для
-цен упомянутых моделей).
+Использование:
+  python scripts/seed_consultation_scene.py             # create if missing
+  python scripts/seed_consultation_scene.py --force     # overwrite
+  python scripts/seed_consultation_scene.py --dry-run
 """
 from __future__ import annotations
 
+import argparse
 import json
 import sqlite3
 import sys
 from pathlib import Path
 
-DB = Path(__file__).resolve().parents[1] / "data" / "agent.db"
+DB = Path(__file__).resolve().parents[1] / "data" / "chatapp_data_prod.db"
 
 SCENE_SLUG = "product_consultation"
 
@@ -86,54 +92,85 @@ ESCALATE_WHEN = [
 ]
 
 
-def main() -> int:
+def payload() -> dict:
+    return {
+        "name": "Консультация по продукту (натяжные потолки)",
+        "active": 1,
+        "sort_order": 50,
+        "auto_reply": 1,
+        "trigger_json": json.dumps(TRIGGER, ensure_ascii=False),
+        "fields_json": json.dumps(FIELDS, ensure_ascii=False),
+        "tools_json": json.dumps(TOOLS, ensure_ascii=False),
+        "response_template": RESPONSE_TEMPLATE,
+        "escalate_when_json": json.dumps(ESCALATE_WHEN, ensure_ascii=False),
+        "knowledge_json": json.dumps([], ensure_ascii=False),
+    }
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--force", action="store_true",
+                        help="Перезаписать сценарий если уже существует")
+    parser.add_argument("--dry-run", action="store_true",
+                        help="Показать действие, не писать в БД")
+    args = parser.parse_args(argv)
+
+    if not DB.exists():
+        print(f"✗ {DB} не существует", file=sys.stderr)
+        return 1
+
     conn = sqlite3.connect(str(DB))
     conn.row_factory = sqlite3.Row
 
     existing = conn.execute(
-        "SELECT id FROM scenes WHERE slug = ?", (SCENE_SLUG,)
+        "SELECT id, name FROM scenes WHERE slug = ?", (SCENE_SLUG,)
     ).fetchone()
-
-    trigger_j = json.dumps(TRIGGER, ensure_ascii=False)
-    fields_j = json.dumps(FIELDS, ensure_ascii=False)
-    tools_j = json.dumps(TOOLS, ensure_ascii=False)
-    escalate_j = json.dumps(ESCALATE_WHEN, ensure_ascii=False)
-    knowledge_j = json.dumps([], ensure_ascii=False)
+    p = payload()
 
     if existing:
-        conn.execute(
-            """UPDATE scenes SET
-                name=?, active=1, sort_order=?, auto_reply=1,
-                trigger_json=?, fields_json=?, tools_json=?,
-                response_template=?, escalate_when_json=?,
-                knowledge_json=?, updated_at=datetime('now')
-               WHERE slug=?""",
-            (
-                "Консультация по продукту (натяжные потолки)",
-                50,
-                trigger_j, fields_j, tools_j,
-                RESPONSE_TEMPLATE, escalate_j, knowledge_j,
-                SCENE_SLUG,
-            ),
-        )
-        print(f"✓ Updated scene '{SCENE_SLUG}' (id={existing['id']})")
+        if args.force:
+            action = "UPDATE (--force)"
+            if not args.dry_run:
+                conn.execute(
+                    """UPDATE scenes SET
+                        name=?, active=?, sort_order=?, auto_reply=?,
+                        trigger_json=?, fields_json=?, tools_json=?,
+                        response_template=?, escalate_when_json=?, knowledge_json=?,
+                        updated_at=datetime('now')
+                       WHERE slug=?""",
+                    (
+                        p["name"], p["active"], p["sort_order"], p["auto_reply"],
+                        p["trigger_json"], p["fields_json"], p["tools_json"],
+                        p["response_template"], p["escalate_when_json"], p["knowledge_json"],
+                        SCENE_SLUG,
+                    ),
+                )
+        else:
+            action = f"SKIP (уже есть, id={existing['id']}, name='{existing['name']}'; для обновления используй --force)"
     else:
-        conn.execute(
-            """INSERT INTO scenes
-                (slug, name, active, sort_order, auto_reply,
-                 trigger_json, fields_json, tools_json,
-                 response_template, escalate_when_json, knowledge_json,
-                 created_at, updated_at)
-               VALUES (?, ?, 1, ?, 1, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))""",
-            (
-                SCENE_SLUG, "Консультация по продукту (натяжные потолки)",
-                50, trigger_j, fields_j, tools_j,
-                RESPONSE_TEMPLATE, escalate_j, knowledge_j,
-            ),
-        )
-        print(f"✓ Created scene '{SCENE_SLUG}'")
+        action = "INSERT"
+        if not args.dry_run:
+            conn.execute(
+                """INSERT INTO scenes
+                    (slug, name, active, sort_order, auto_reply,
+                     trigger_json, fields_json, tools_json,
+                     response_template, escalate_when_json, knowledge_json,
+                     created_at, updated_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), datetime('now'))""",
+                (
+                    SCENE_SLUG, p["name"], p["active"], p["sort_order"], p["auto_reply"],
+                    p["trigger_json"], p["fields_json"], p["tools_json"],
+                    p["response_template"], p["escalate_when_json"], p["knowledge_json"],
+                ),
+            )
 
-    conn.commit()
+    if args.dry_run:
+        print(f"--dry-run: {action} (ничего не записано)")
+        conn.rollback()
+    else:
+        conn.commit()
+        print(f"✓ {SCENE_SLUG}: {action}")
+
     conn.close()
     return 0
 
