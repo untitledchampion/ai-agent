@@ -117,12 +117,12 @@ def search_products(query: str, k: int = 10) -> list[dict]:
 
     results = _rerank_by_tokens(q, [dict(r) for r in rows])
 
-    # Обогащаем live-ценой из 1С (БП2) для тех, у кого есть ref_key
-    try:
-        from agent.core.prices_1c import fetch_prices
+    # Обогащаем live-данными из 1С (цены БП2 + остатки) для тех, у кого есть ref_key
+    refs = [r["ref_key"] for r in results if r.get("ref_key")]
+    if refs:
+        try:
+            from agent.core.prices_1c import fetch_prices
 
-        refs = [r["ref_key"] for r in results if r.get("ref_key")]
-        if refs:
             prices = fetch_prices(refs)
             for r in results:
                 rk = r.get("ref_key")
@@ -132,8 +132,20 @@ def search_products(query: str, k: int = 10) -> list[dict]:
                     r["price_source"] = "1c"
                 else:
                     r["price_source"] = "local"
-    except Exception as e:
-        logger.warning("live price enrichment failed: %s", e)
+        except Exception as e:
+            logger.warning("live price enrichment failed: %s", e)
+
+        try:
+            from agent.core.stocks_1c import fetch_stocks
+
+            stocks = fetch_stocks(refs)
+            for r in results:
+                rk = r.get("ref_key")
+                s = stocks.get(rk, []) if rk else []
+                r["stock"] = s
+                r["stock_total"] = sum(x["qty"] for x in s)
+        except Exception as e:
+            logger.warning("live stock enrichment failed: %s", e)
 
     return results
 
