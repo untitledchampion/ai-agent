@@ -1,6 +1,8 @@
 # Secrets
 .env
 .env.local
+.env.prod
+data/backups/.env.prod
 
 # Python
 __pycache__/
