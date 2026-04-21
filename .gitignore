@@ -24,7 +24,10 @@ node_modules/
 *.sqlite
 *.sqlite3
 
-# Backups
+# Исключение: эталонный бэкап прод-базы (для восстановления на новом сервере)
+!data/backups/*.db
+
+# Backups (остальные)
 *.bak
 *.backup
 *.gz
